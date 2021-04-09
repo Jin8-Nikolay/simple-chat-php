@@ -1,5 +1,4 @@
 <?php
-define('PORT', "8090");
 
 class Chat
 {
@@ -26,9 +25,20 @@ class Chat
         socket_write($newSocket, $strHeadr, strlen($strHeadr));
     }
 
-    public function newConnectionACK($client_ip_address)
+    public function newConnectionACK($client_ip_address): string
     {
         $message = "New client " . $client_ip_address . " connected";
+        return $this->sendConnection($message);
+    }
+
+    public function newDisconnectedACK($client_ip_address): string
+    {
+        $message = "Client " . $client_ip_address . " disconnected";
+        return $this->sendConnection($message);
+    }
+
+    private function sendConnection($message)
+    {
         $messageArray = [
             "message" => $message,
             "type" => "newConnectionACK"
@@ -37,7 +47,7 @@ class Chat
         return $ask;
     }
 
-    public function seal($socketData)
+    public function seal($socketData): string
     {
         $b1 = 0x81;
         $length = strlen($socketData);
@@ -55,8 +65,40 @@ class Chat
     public function send($message, $clientSocketArray)
     {
         $messageLength = strlen($message);
-        foreach ($clientSocketArray as $clientSocket){
+        foreach ($clientSocketArray as $clientSocket) {
             @socket_write($clientSocket, $message, $messageLength);
         }
     }
+
+    public function unseal($socketData): string
+    {
+        $length = ord($socketData[1]) & 127;
+        if ($length == 126) {
+            $mask = substr($socketData, 4, 4);
+            $data = substr($socketData, 8);
+        } elseif ($length == 127) {
+            $mask = substr($socketData, 10, 4);
+            $data = substr($socketData, 14);
+        } else {
+            $mask = substr($socketData, 2, 4);
+            $data = substr($socketData, 6);
+        }
+        $socketStr = "";
+        for ($i = 0; $i < strlen($data); ++$i) {
+            $socketStr .= $data[$i] ^ $mask[$i % 4];
+        }
+        return $socketStr;
+    }
+
+    public function createChatMessage($username, $messageStr): string
+    {
+        $message = $username . "<div>" . $messageStr . "</div>";
+        $messageArray = [
+            'type' => 'chat-box',
+            'message' => $message,
+        ];
+        return $this->seal(json_encode($messageArray));
+    }
+
+
 }
